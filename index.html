@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- PASSWORD GATE -->
+<script>
+(function(){
+  function hash(s){
+    let h=0;
+    for(let i=0;i<s.length;i++) h=Math.imul(h,31)+s.charCodeAt(i)|0;
+    return (h>>>0).toString(16);
+  }
+  const HASH='4d8a823';
+  const KEY='bh_auth';
+  if(sessionStorage.getItem(KEY)===HASH) return; // already authenticated
+  document.addEventListener('DOMContentLoaded', function(){
+    // Build overlay
+    const overlay=document.createElement('div');
+    overlay.id='pw-overlay';
+    overlay.innerHTML=`
+      <div id="pw-box">
+        <div id="pw-icon">🍹</div>
+        <h2>Bar Hopping Düsseldorf</h2>
+        <p>Bitte Passwort eingeben</p>
+        <input type="password" id="pw-input" placeholder="Passwort…" autofocus>
+        <button id="pw-btn">Weiter</button>
+        <div id="pw-err"></div>
+      </div>
+      <style>
+        #pw-overlay{position:fixed;inset:0;z-index:99999;
+          background:linear-gradient(135deg,#0d0b0e 0%,#1a1420 100%);
+          display:flex;align-items:center;justify-content:center;font-family:'Segoe UI',system-ui,sans-serif}
+        #pw-box{background:#16131a;border:1px solid #2b2535;border-radius:18px;
+          padding:40px 36px;text-align:center;width:min(340px,90vw);
+          box-shadow:0 20px 60px rgba(0,0,0,.7)}
+        #pw-icon{font-size:2.6rem;margin-bottom:12px}
+        #pw-box h2{color:#e8c96a;font-size:1.3rem;font-weight:700;margin-bottom:6px}
+        #pw-box p{color:#8a8097;font-size:.88rem;margin-bottom:22px}
+        #pw-input{width:100%;background:rgba(255,255,255,.06);border:1px solid #2b2535;
+          border-radius:9px;color:#ede8f0;padding:11px 14px;font-size:1rem;outline:none;
+          text-align:center;letter-spacing:2px;margin-bottom:12px;transition:border-color .2s}
+        #pw-input:focus{border-color:#c9a84c}
+        #pw-btn{width:100%;background:linear-gradient(135deg,#5a3a8c,#c4768a);border:none;
+          border-radius:9px;color:#fff;padding:11px;font-size:.95rem;font-weight:600;
+          cursor:pointer;transition:opacity .2s}
+        #pw-btn:hover{opacity:.85}
+        #pw-err{color:#e57373;font-size:.82rem;margin-top:10px;min-height:18px}
+        #pw-input.shake{animation:shake .35s}
+        @keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+      </style>`;
+    document.body.prepend(overlay);
+    document.body.style.overflow='hidden';
+
+    function attempt(){
+      const val=document.getElementById('pw-input').value;
+      if(hash(val)===HASH){
+        sessionStorage.setItem(KEY,HASH);
+        overlay.style.transition='opacity .4s';
+        overlay.style.opacity='0';
+        setTimeout(()=>{overlay.remove();document.body.style.overflow='';},400);
+      } else {
+        const inp=document.getElementById('pw-input');
+        document.getElementById('pw-err').textContent='Falsches Passwort – nochmal versuchen.';
+        inp.value='';inp.classList.remove('shake');
+        void inp.offsetWidth;inp.classList.add('shake');
+        inp.focus();
+      }
+    }
+    document.getElementById('pw-btn').addEventListener('click',attempt);
+    document.getElementById('pw-input').addEventListener('keydown',e=>{if(e.key==='Enter')attempt();});
+  });
+})();
+</script>
+<title>Bar Hopping Düsseldorf – 24. April</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>
+:root {
+  --bg: #0d0b0e;
+  --card: #16131a;
+  --card-border: #2b2535;
+  --gold: #c9a84c;
+  --gold2: #e8c96a;
+  --gold-dim: rgba(201,168,76,0.15);
+  --rose: #c4768a;
+  --rose-dim: rgba(196,118,138,0.15);
+  --text: #ede8f0;
+  --muted: #8a8097;
+  --green: #5ecfa8;
+  --star: #e8a030;
+  --r: 14px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh;padding-bottom:80px}
+
+/* HEADER */
+header{
+  padding:40px 20px 28px;text-align:center;
+  background:radial-gradient(ellipse 80% 60% at 50% 0%,rgba(201,168,76,0.08) 0%,transparent 70%),
+             linear-gradient(180deg,#1a1420 0%,var(--bg) 100%);
+  border-bottom:1px solid var(--card-border);
+}
+.hd-label{font-size:.7rem;letter-spacing:3px;text-transform:uppercase;color:var(--gold);margin-bottom:10px;opacity:.8}
+header h1{
+  font-size:clamp(1.6rem,5vw,2.4rem);font-weight:700;letter-spacing:-.5px;
+  background:linear-gradient(120deg,var(--gold) 0%,var(--gold2) 50%,var(--rose) 100%);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+}
+.hd-sub{color:var(--muted);font-size:.9rem;margin-top:6px}
+.hd-date{
+  display:inline-block;margin-top:14px;
+  border:1px solid rgba(201,168,76,.35);background:var(--gold-dim);
+  color:var(--gold2);padding:5px 18px;border-radius:50px;font-size:.82rem;font-weight:600;letter-spacing:.5px
+}
+
+/* NOTICE BOX */
+.notice{
+  max-width:660px;margin:20px auto;padding:0 16px;
+}
+.notice-inner{
+  background:#1a1420;border:1px solid rgba(201,168,76,.25);border-radius:var(--r);
+  padding:14px 18px;font-size:.82rem;color:var(--muted);line-height:1.6;
+}
+.notice-inner strong{color:var(--gold2)}
+
+/* NAME */
+.name-wrap{max-width:660px;margin:0 auto 20px;padding:0 16px}
+.name-card{
+  background:var(--card);border:1px solid var(--card-border);border-radius:var(--r);
+  padding:16px 18px;display:flex;align-items:center;gap:14px
+}
+.name-avatar{
+  width:42px;height:42px;border-radius:50%;flex-shrink:0;
+  background:linear-gradient(135deg,#5a3a8c,var(--rose));
+  display:flex;align-items:center;justify-content:center;font-size:1.2rem
+}
+.name-card label{display:block;font-size:.72rem;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.8px}
+.name-card input{
+  background:rgba(255,255,255,.05);border:1px solid var(--card-border);
+  border-radius:8px;color:var(--text);padding:8px 12px;font-size:.93rem;width:100%;outline:none;
+  transition:border-color .2s
+}
+.name-card input:focus{border-color:var(--gold)}
+.name-card input::placeholder{color:var(--muted)}
+
+/* SECTION TITLE */
+.sec{max-width:660px;margin:0 auto;padding:0 16px}
+.sec-title{
+  font-size:.7rem;letter-spacing:2.5px;text-transform:uppercase;color:var(--muted);
+  font-weight:600;margin-bottom:14px;display:flex;align-items:center;gap:12px
+}
+.sec-title::after{content:'';flex:1;height:1px;background:var(--card-border)}
+
+/* MAP */
+.map-wrap{max-width:660px;margin:0 auto 28px;padding:0 16px}
+#map{
+  width:100%;height:360px;border-radius:var(--r);
+  border:1px solid var(--card-border);
+}
+/* Leaflet popup dark theme */
+.leaflet-popup-content-wrapper{
+  background:#16131a !important;border:1px solid #2b2535 !important;
+  border-radius:12px !important;box-shadow:0 10px 40px rgba(0,0,0,.7) !important;
+  padding:0 !important;color:var(--text) !important
+}
+.leaflet-popup-tip{background:#16131a !important}
+.leaflet-popup-content{margin:0 !important;width:230px !important}
+.pu{padding:14px 16px}
+.pu-stop{font-size:.68rem;letter-spacing:1.5px;text-transform:uppercase;color:var(--gold);margin-bottom:3px}
+.pu-name{font-size:.97rem;font-weight:700;color:var(--gold2);margin-bottom:5px}
+.pu-addr{font-size:.75rem;color:var(--muted);margin-bottom:10px;line-height:1.4}
+.pu-drink{font-size:.77rem;background:var(--rose-dim);border:1px solid rgba(196,118,138,.2);border-radius:6px;padding:6px 9px;margin-bottom:10px}
+.pu-btns{display:flex;gap:7px}
+.pu-btn{
+  flex:1;text-align:center;padding:7px 6px;border-radius:7px;
+  font-size:.72rem;font-weight:600;text-decoration:none;cursor:pointer
+}
+.pu-btn.gm{background:var(--gold-dim);border:1px solid rgba(201,168,76,.35);color:var(--gold2)}
+.pu-btn.wb{background:rgba(90,58,140,.25);border:1px solid rgba(90,58,140,.5);color:#b09edd}
+
+/* BARS LIST */
+.bars-list{display:flex;flex-direction:column}
+
+.stop-wrap{display:flex;gap:0}
+.conn{display:flex;flex-direction:column;align-items:center;width:38px;flex-shrink:0}
+.snum{
+  width:30px;height:30px;border-radius:50%;margin-top:22px;flex-shrink:0;
+  background:linear-gradient(135deg,var(--gold),var(--gold2));
+  color:#0d0b0e;font-weight:800;font-size:.8rem;
+  display:flex;align-items:center;justify-content:center;z-index:1
+}
+.vline{width:2px;flex:1;min-height:16px;background:linear-gradient(to bottom,rgba(201,168,76,.4),rgba(201,168,76,.05))}
+.stop-wrap:last-child .vline{display:none}
+
+.bar-card{
+  flex:1;background:var(--card);border:1px solid var(--card-border);
+  border-radius:var(--r);margin:10px 0 10px 10px;overflow:hidden;
+  transition:border-color .25s,box-shadow .25s
+}
+.bar-card:hover{border-color:rgba(201,168,76,.3);box-shadow:0 4px 24px rgba(0,0,0,.4)}
+
+/* PHOTO */
+.bar-photo-wrap{position:relative;height:200px;overflow:hidden;background:#1a1420}
+.bar-photo-wrap img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .4s}
+.bar-card:hover .bar-photo-wrap img{transform:scale(1.03)}
+.bar-photo-wrap .photo-overlay{
+  position:absolute;inset:0;
+  background:linear-gradient(to bottom,transparent 50%,rgba(13,11,14,.85) 100%)
+}
+
+/* HEADER */
+.bar-head{padding:14px 16px 10px;border-bottom:1px solid var(--card-border);display:flex;gap:10px;align-items:flex-start}
+.bar-info{flex:1;min-width:0}
+.bar-name{font-size:1.08rem;font-weight:700;color:var(--gold2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bar-tag{font-size:.75rem;color:var(--muted);margin-top:2px}
+.bar-btns{display:flex;flex-direction:column;gap:5px;flex-shrink:0}
+.btn-sm{
+  display:inline-flex;align-items:center;gap:4px;
+  padding:5px 9px;border-radius:7px;font-size:.7rem;font-weight:600;
+  text-decoration:none;white-space:nowrap;transition:opacity .2s
+}
+.btn-sm:hover{opacity:.8}
+.btn-gm{background:var(--gold-dim);border:1px solid rgba(201,168,76,.35);color:var(--gold2)}
+.btn-wb{background:rgba(90,58,140,.2);border:1px solid rgba(90,58,140,.4);color:#b09edd}
+
+/* BODY */
+.bar-body{padding:13px 16px}
+.walk{display:flex;align-items:center;gap:6px;font-size:.73rem;color:var(--muted);margin-bottom:9px}
+.walk-dot{width:6px;height:6px;border-radius:50%;background:var(--green);flex-shrink:0}
+.bar-desc{font-size:.86rem;color:var(--muted);line-height:1.65;margin-bottom:12px}
+.drink-box{
+  background:var(--rose-dim);border:1px solid rgba(196,118,138,.25);
+  border-radius:10px;padding:10px 13px;display:flex;gap:9px;align-items:flex-start
+}
+.drink-label{font-size:.68rem;text-transform:uppercase;letter-spacing:.8px;color:var(--rose);font-weight:700;white-space:nowrap;margin-top:1px}
+.drink-text{font-size:.86rem;color:var(--text);line-height:1.5}
+
+/* RATING */
+.rating-sec{border-top:1px solid var(--card-border);padding:13px 16px;background:rgba(255,255,255,.015)}
+.r-title{font-size:.7rem;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin-bottom:10px;font-weight:600}
+.stars-row{display:flex;align-items:center;gap:3px;margin-bottom:10px}
+.star{font-size:1.35rem;cursor:pointer;color:#2b2535;transition:color .1s,transform .1s;user-select:none}
+.star:hover,.star.on{color:var(--star)}
+.star:hover{transform:scale(1.2)}
+.star-lbl{font-size:.78rem;color:var(--muted);margin-left:5px}
+.drink-row{display:flex;gap:7px;align-items:center}
+.drink-inp{
+  flex:1;background:rgba(255,255,255,.05);border:1px solid var(--card-border);
+  border-radius:8px;color:var(--text);padding:8px 12px;font-size:.86rem;outline:none;transition:border-color .2s
+}
+.drink-inp:focus{border-color:var(--rose)}
+.drink-inp::placeholder{color:var(--muted)}
+.save-btn{
+  background:linear-gradient(135deg,#5a3a8c,var(--rose));border:none;
+  border-radius:8px;color:#fff;padding:8px 13px;font-size:.8rem;font-weight:600;cursor:pointer;white-space:nowrap
+}
+.save-btn:hover{opacity:.85}
+.saved-ok{display:flex;align-items:center;gap:5px;font-size:.78rem;color:var(--green);margin-top:7px;opacity:0;transition:opacity .3s}
+.saved-ok.show{opacity:1}
+.rev-toggle{
+  background:none;border:1px solid var(--card-border);border-radius:8px;
+  color:var(--muted);padding:6px 12px;font-size:.75rem;cursor:pointer;
+  margin-top:10px;width:100%;transition:border-color .2s,color .2s
+}
+.rev-toggle:hover{border-color:var(--gold);color:var(--gold2)}
+.rev-list{display:none;flex-direction:column;gap:7px;margin-top:9px}
+.rev-list.open{display:flex}
+.rev-item{background:rgba(255,255,255,.03);border-radius:8px;padding:9px 12px;display:flex;gap:9px;align-items:center}
+.rev-av{
+  width:28px;height:28px;border-radius:50%;flex-shrink:0;
+  background:linear-gradient(135deg,#5a3a8c,var(--rose));
+  display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:700;color:#fff
+}
+.rev-name{font-size:.8rem;font-weight:600}
+.rev-stars{font-size:.82rem;color:var(--star)}
+.rev-drink{font-size:.75rem;color:var(--muted);margin-top:1px}
+
+/* SUMMARY */
+.sum-wrap{max-width:660px;margin:24px auto 0;padding:0 16px}
+.sum-card{background:var(--card);border:1px solid var(--card-border);border-radius:var(--r);padding:20px}
+.sum-card h3{font-size:.95rem;color:var(--gold2);margin-bottom:14px}
+.sum-row{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:9px 12px;background:rgba(255,255,255,.025);border-radius:8px;font-size:.86rem;margin-bottom:6px
+}
+.sum-name{color:var(--text);font-weight:500}
+.sum-right{display:flex;align-items:center;gap:9px}
+.sum-stars{color:var(--star)}
+.sum-drink{color:var(--muted);font-size:.78rem;max-width:130px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.no-r{color:var(--muted);font-size:.83rem;text-align:center;padding:10px 0}
+
+footer{text-align:center;color:var(--muted);font-size:.75rem;padding:30px 20px 0}
+footer a{color:var(--gold);text-decoration:none}
+
+@media(max-width:400px){
+  .btn-wb span,.btn-gm span{display:none}
+  #map{height:260px}
+  .bar-photo-wrap{height:160px}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="hd-label">Girl's Night Out · Düsseldorf</div>
+  <h1>Bar Hopping</h1>
+  <p class="hd-sub">Fünf erstklassige Cocktailbars – eine unvergessliche Nacht</p>
+  <div class="hd-date">Donnerstag, 24. April 2026</div>
+</header>
+
+<!-- MULTI-USER NOTICE -->
+<div class="notice">
+  <div class="notice-inner">
+    <strong>Geteilte Bewertungen:</strong> Damit alle Teilnehmerinnen die gleiche Website mit denselben Bewertungen sehen, muss die Seite einmalig kostenlos online gestellt werden – z.&nbsp;B. via <strong>GitHub Pages + Firebase</strong> (beide komplett kostenlos). Alternativ: <strong>eine Person hostet die Seite lokal</strong> und alle anderen nutzen ihr Gerät im selben WLAN. Aktuell werden Bewertungen lokal gespeichert und sind nur auf diesem Gerät sichtbar.
+  </div>
+</div>
+
+<!-- NAME -->
+<div class="name-wrap">
+  <div class="name-card">
+    <div class="name-avatar">👤</div>
+    <div style="flex:1">
+      <label for="pname">Dein Name</label>
+      <input type="text" id="pname" placeholder="Z.B. Lisa" maxlength="30" autocomplete="off">
+    </div>
+  </div>
+</div>
+
+<!-- MAP -->
+<div class="map-wrap">
+  <div class="sec-title" style="margin-bottom:12px">Route auf der Karte</div>
+  <div id="map"></div>
+</div>
+
+<!-- BARS -->
+<div class="sec">
+  <div class="sec-title">Die Stops</div>
+  <div class="bars-list" id="barsList"></div>
+</div>
+
+<!-- SUMMARY -->
+<div class="sum-wrap">
+  <div class="sum-card">
+    <h3>📊 Deine Zusammenfassung</h3>
+    <div id="sumGrid"><div class="no-r">Noch keine Bewertungen abgegeben.</div></div>
+  </div>
+</div>
+
+<footer>
+  <p>Girl's Night Out · Düsseldorf · 24. April 2026</p>
+  <p style="margin-top:5px;color:#3a3345">Bewertungen werden lokal gespeichert</p>
+</footer>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// ─── BAR DATA ────────────────────────────────────────────────────────────────
+const BARS = [
+  {
+    id: 'beuys',
+    name: 'BEUYS Bar',
+    tag: 'Neubrückstraße · Altstadt',
+    address: 'Neubrückstraße 2, 40213 Düsseldorf',
+    lat: 51.22909, lng: 6.77498,
+    mapsUrl: 'https://www.google.com/maps/place/BEUYS+Bar/@51.2290927,6.7727917,17z/data=!3m1!4b1!4m6!3m5!1s0x47b8ca18da596597:0x45a0de2c6e6042a8!8m2!3d51.2290927!4d6.7749804!16s%2Fg%2F11b5wkg2wc?entry=tts&shorturl=1',
+    website: 'https://www.beuys-bar.com/',
+    photo: 'Bar Bilder/Beuys-Bar-07-2023---Foto-by-Sascha-Perrone-2-p-800.jpg',
+    walk: 'Startpunkt – hier geht es los!',
+    desc: 'Seit fast 10 Jahren ist die BEUYS Bar in der Düsseldorfer Altstadt eine Instanz für anspruchsvolle und einzigartige Drink-Kreationen. Das gemütliche Ambiente kreiert eine entspannte Atmosphäre, die zum Verweilen einlädt. 2023 frisch renoviert zurück – für "The art of mixology" in Düsseldorf.',
+    drink: 'Signature Cocktail der Saison – die Karte wächst stetig und überrascht mit neuen Kompositionen. Einfach fragen, was gerade der Star ist!'
+  },
+  {
+    id: 'oaks',
+    name: "The Oak's Bar",
+    tag: 'Altstadt · Denkmalgeschützter Geheimtipp',
+    address: 'Altstadt, 40213 Düsseldorf',
+    lat: 51.2283, lng: 6.7748,
+    mapsUrl: "https://maps.google.com/?q=The+Oak's+Bar+Düsseldorf",
+    website: 'https://theoaksbar.de/',
+    photo: 'Bar Bilder/OAKS_IMG_0111.jpg',
+    walk: '~3 Min. Fußweg',
+    desc: 'The Oak\'s Bar ist Heimat der Cocktailtrinker und Weinliebhaber im Herzen der Düsseldorfer Altstadt. Das denkmalgeschützte Gebäude wurde mit Liebe zum Detail umgebaut – alte Backsteinmauern, warmes Ambiente, innovative Cocktails. Dank der schmalen Fassade ein echter Geheimtipp. Mi–Sa ab 17 Uhr.',
+    drink: 'Innovative Eigenkreationen oder exzellente Weine – die Bartender haben sich dem guten Geschmack verschrieben und teilen ihre Leidenschaft gerne.'
+  },
+  {
+    id: 'elephant',
+    name: 'Elephant Bar',
+    tag: 'Kurze Straße · Sixties-Stil & Soul',
+    address: 'Kurze Straße 3, 40213 Düsseldorf',
+    lat: 51.2275, lng: 6.7738,
+    mapsUrl: 'https://maps.google.com/?q=Elephant+Bar+Kurze+Straße+3+Düsseldorf',
+    website: 'https://www.elephant-bar.de/',
+    photo: 'Bar Bilder/elephant-1743.jpg',
+    walk: '~4 Min. Fußweg',
+    desc: 'Kleine Bar, großer Name: Die Elephant Bar eröffnete im ehemaligen Q-Stall mitten in der Altstadt. Schickes Ambiente im Stil der sechziger Jahre mit viel Holz und Marmor, erstklassige Drinks und gute Musik – Funk, Soul, HipHop und Jazz aus der Hand wechselnder DJs. Fernab von typischer Altstadt-Kneipe.',
+    drink: 'Fragt nach dem Signature Drink der Saison – der Fokus liegt auf gepflegter Barkultur und handwerklich perfekten Cocktails.'
+  },
+  {
+    id: 'boothbys',
+    name: "Boothby's Bar",
+    tag: 'Hüttenstraße · Cocktail-Kultbar',
+    address: 'Hüttenstraße 44, 40215 Düsseldorf',
+    lat: 51.2195, lng: 6.7798,
+    mapsUrl: 'https://www.google.com/maps?ftid=0x47b8ca3900c10997:0x76b575fa12307de',
+    website: 'https://www.boothbys-bar.com/',
+    photo: 'Bar Bilder/boothbys.avif',
+    walk: '~10 Min. Fußweg',
+    desc: 'Mit viel Liebe zum Detail und gepflegter Barkultur an erster Stelle: Boothby\'s Bar eröffnete im Dezember 2017 und ist seither bekannt für handwerklich perfekte Drinks in einer Wohnzimmer-Atmosphäre mit Speakeasy-Charakter.',
+    drink: '„Beste Drinks in bester Atmosphäre" – fragt nach dem Signature Cocktail oder einem klassischen Whisky Sour, meisterhaft zubereitet.'
+  },
+  {
+    id: 'hideaway',
+    name: 'Bar Hideaway',
+    tag: 'Jahnstraße · Japanese Speakeasy',
+    address: 'Jahnstraße 6, 40215 Düsseldorf',
+    lat: 51.2168, lng: 6.7811,
+    mapsUrl: 'https://www.google.com/maps/place/Cocktail+Bar+Hideaway/@51.2168193,6.7785006,17z/data=!3m2!4b1!5s0x47b8ca3ed3cb728f:0xdcc7bf133fea5281!4m6!3m5!1s0x47b8cb0d13be50a5:0x6653ee390305e5a4!8m2!3d51.216816!4d6.7810755!16s%2Fg%2F11t9b7cy2p?entry=ttu',
+    website: 'https://bar-hideaway.de/',
+    photo: 'Bar Bilder/hideaway11.jpg',
+    walk: '~5 Min. Fußweg',
+    desc: 'Bar Hideaway ist eine japanisch inspirierte Speakeasy-Cocktailbar im Herzen Düsseldorfs – ein verborgenes Juwel für Kenner, die einen Moment der Ruhe und Raffinesse suchen. Intime Atmosphäre, präzise Mixologie, kein unnötiges Brimborium.',
+    drink: 'Yuzu Highball oder ein japanisch interpretierter Gimlet – frisch, präzise, minimalistisch schön.'
+  },
+  {
+    id: 'barstudio1',
+    name: 'Bar Studio 1',
+    tag: 'Jahnstraße · Late Night Bar',
+    address: 'Jahnstraße 2a, 40215 Düsseldorf',
+    lat: 51.2176, lng: 6.7809,
+    mapsUrl: 'https://www.google.com/maps/place//data=!4m2!3m1!1s0x47b8ca3ec8e7e429:0x22da9cfa2042d7dc?sa=X&ved=1t:8290&ictx=111',
+    website: null,
+    photo: 'https://s3-media0.fl.yelpcdn.com/bphoto/39_44eCvB-DiVVTKHDO6CQ/l.jpg',
+    walk: '~2 Min. Fußweg',
+    desc: 'Bar Studio 1 ist die gemütliche Nachbarschafts-Cocktailbar im Friedrichstadt-Viertel: gute Musik, entspannte Leute und eine Karte ohne Kompromisse. Offen bis 4 Uhr – für alle, die die Nacht noch nicht enden lassen wollen.',
+    drink: 'Espresso Martini – der perfekte Wachmacher für die zweite Hälfte der Nacht. Oder ein kräftiger Rum-Sour.'
+  },
+  {
+    id: 'barlola',
+    name: 'Bar Lola',
+    tag: 'Adersstraße · Cocktail Lab',
+    address: 'Adersstraße 19, 40215 Düsseldorf',
+    lat: 51.2179, lng: 6.7803,
+    mapsUrl: 'https://www.google.com/maps/place/Bar+Lola/@51.2178896,6.7776795,17z/data=!3m2!4b1!5s0x47b8ca3eeaba259b:0x3e4efa61e02198ca!4m6!3m5!1s0x47b8ca3ebc1e25b9:0x942b5dc302948ad7!8m2!3d51.2178863!4d6.7802544!16s%2Fg%2F11mbpqxzvk?entry=ttu',
+    website: 'https://barlola.de/',
+    photo: 'Bar Bilder/BarLola.png',
+    walk: '~2 Min. Fußweg',
+    desc: 'Bar Lola – „Cocktail Lab & Salon Electrique" – verbindet moderne, elektrisierte Energie mit höchsten Ansprüchen an die Cocktailkultur. Eine Eckbar mit Persönlichkeit, auf der Adersstraße gelegen, die mit kreativen Eigenkreationen begeistert.',
+    drink: 'Fragt nach dem Lab Special der Woche – immer experimentell, immer überraschend gut.'
+  }
+];
+
+const KEY = 'barhopping_ddorf_apr26';
+function load(){try{return JSON.parse(localStorage.getItem(KEY)||'{}')}catch{return{}}}
+function save(d){localStorage.setItem(KEY,JSON.stringify(d))}
+function name(){return document.getElementById('pname').value.trim()||'Anonym'}
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+
+// ─── MAP ─────────────────────────────────────────────────────────────────────
+function initMap(){
+  const map=L.map('map',{zoomControl:true}).setView([51.221,6.779],14);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{
+    attribution:'&copy; CARTO',maxZoom:19
+  }).addTo(map);
+
+  // Route line
+  L.polyline(BARS.map(b=>[b.lat,b.lng]),{
+    color:'#c9a84c',weight:2.5,opacity:.65,dashArray:'7,5'
+  }).addTo(map);
+
+  BARS.forEach((b,i)=>{
+    const icon=L.divIcon({
+      html:`<div style="width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#c9a84c,#e8c96a);color:#0d0b0e;font-weight:800;font-size:12px;display:flex;align-items:center;justify-content:center;border:2px solid #0d0b0e;box-shadow:0 2px 10px rgba(0,0,0,.6)">${i+1}</div>`,
+      className:'',iconSize:[30,30],iconAnchor:[15,15]
+    });
+    const popup=`<div class="pu">
+      <div class="pu-stop">Stop ${i+1}</div>
+      <div class="pu-name">${esc(b.name)}</div>
+      <div class="pu-addr">${esc(b.address)}</div>
+      <div class="pu-drink">🍹 ${esc(b.drink.slice(0,70))}…</div>
+      <div class="pu-btns">
+        <a class="pu-btn gm" href="${b.mapsUrl}" target="_blank" rel="noopener">📍 Google Maps</a>
+        ${b.website?`<a class="pu-btn wb" href="${b.website}" target="_blank" rel="noopener">🌐 Website</a>`:''}
+      </div>
+    </div>`;
+    L.marker([b.lat,b.lng],{icon}).addTo(map).bindPopup(popup,{maxWidth:250});
+  });
+}
+
+// ─── RENDER BARS ─────────────────────────────────────────────────────────────
+function renderBars(){
+  document.getElementById('barsList').innerHTML=BARS.map((b,i)=>`
+  <div class="stop-wrap">
+    <div class="conn">
+      <div class="snum">${i+1}</div>
+      <div class="vline"></div>
+    </div>
+    <div class="bar-card" data-id="${b.id}">
+      ${b.photo?`
+      <div class="bar-photo-wrap">
+        <img src="${esc(b.photo)}" alt="${esc(b.name)}" loading="lazy"
+          onerror="this.parentElement.style.display='none'">
+        <div class="photo-overlay"></div>
+      </div>`:''}
+      <div class="bar-head">
+        <div class="bar-info">
+          <div class="bar-name">${esc(b.name)}</div>
+          <div class="bar-tag">${esc(b.tag)}</div>
+        </div>
+        <div class="bar-btns">
+          <a class="btn-sm btn-gm" href="${b.mapsUrl}" target="_blank" rel="noopener">📍 <span>Maps</span></a>
+          ${b.website?`<a class="btn-sm btn-wb" href="${b.website}" target="_blank" rel="noopener">🌐 <span>Website</span></a>`:''}
+        </div>
+      </div>
+      <div class="bar-body">
+        <div class="walk"><div class="walk-dot"></div>${esc(b.walk)}</div>
+        <p class="bar-desc">${esc(b.desc)}</p>
+        <div class="drink-box">
+          <span class="drink-label">Empfehlung</span>
+          <span class="drink-text">${esc(b.drink)}</span>
+        </div>
+      </div>
+      <div class="rating-sec">
+        <div class="r-title">Deine Bewertung</div>
+        <div class="stars-row">
+          <span class="star" data-v="1">★</span><span class="star" data-v="2">★</span>
+          <span class="star" data-v="3">★</span><span class="star" data-v="4">★</span>
+          <span class="star" data-v="5">★</span>
+          <span class="star-lbl">Noch nicht bewertet</span>
+        </div>
+        <div class="drink-row">
+          <input class="drink-inp" type="text" placeholder="Lieblingsdrink eintragen…" maxlength="60">
+          <button class="save-btn">Speichern</button>
+        </div>
+        <div class="saved-ok">✓ Gespeichert</div>
+        <button class="rev-toggle">Alle Bewertungen ▾</button>
+        <div class="rev-list"></div>
+      </div>
+    </div>
+  </div>`).join('');
+
+  document.querySelectorAll('.bar-card').forEach(initCard);
+}
+
+// ─── CARD LOGIC ───────────────────────────────────────────────────────────────
+function initCard(card){
+  const id=card.dataset.id;
+  const stars=card.querySelectorAll('.star');
+  const lbl=card.querySelector('.star-lbl');
+  const inp=card.querySelector('.drink-inp');
+  const btn=card.querySelector('.save-btn');
+  const ok=card.querySelector('.saved-ok');
+  const tog=card.querySelector('.rev-toggle');
+  const revList=card.querySelector('.rev-list');
+
+  function mine(){const d=load();return(d[id]&&d[id][name()])||{stars:0,drink:''}}
+  function refresh(){
+    const r=mine();
+    stars.forEach(s=>s.classList.toggle('on',+s.dataset.v<=r.stars));
+    lbl.textContent=r.stars?'★'.repeat(r.stars)+'☆'.repeat(5-r.stars)+` (${r.stars}/5)`:'Noch nicht bewertet';
+    inp.value=r.drink||'';
+  }
+  refresh();
+
+  stars.forEach(s=>{
+    s.addEventListener('mouseenter',()=>stars.forEach(x=>x.classList.toggle('on',+x.dataset.v<=+s.dataset.v)));
+    s.addEventListener('mouseleave',refresh);
+    s.addEventListener('click',()=>{
+      const d=load(),n=name();
+      if(!d[id])d[id]={};
+      if(!d[id][n])d[id][n]={stars:0,drink:''};
+      d[id][n].stars=+s.dataset.v;
+      save(d);refresh();updateSum();
+      if(revList.classList.contains('open'))renderRevs(id,revList);
+    });
+  });
+
+  btn.addEventListener('click',()=>{
+    const d=load(),n=name();
+    if(!d[id])d[id]={};
+    if(!d[id][n])d[id][n]={stars:0,drink:''};
+    d[id][n].drink=inp.value.trim();
+    save(d);
+    ok.classList.add('show');setTimeout(()=>ok.classList.remove('show'),2000);
+    updateSum();
+    if(revList.classList.contains('open'))renderRevs(id,revList);
+  });
+
+  tog.addEventListener('click',()=>{
+    const open=revList.classList.toggle('open');
+    tog.textContent=open?'Bewertungen ausblenden ▴':'Alle Bewertungen ▾';
+    if(open)renderRevs(id,revList);
+  });
+}
+
+function renderRevs(id,container){
+  const d=load();
+  const entries=Object.entries(d[id]||{});
+  if(!entries.length){
+    container.innerHTML='<div style="color:var(--muted);font-size:.8rem;text-align:center;padding:7px 0">Noch keine Bewertungen auf diesem Gerät.</div>';
+    return;
+  }
+  container.innerHTML=entries.map(([n,r])=>`
+    <div class="rev-item">
+      <div class="rev-av">${esc(n.slice(0,2).toUpperCase())}</div>
+      <div>
+        <div class="rev-name">${esc(n)}</div>
+        <div class="rev-stars">${r.stars?'★'.repeat(r.stars)+'☆'.repeat(5-r.stars):'–'}</div>
+        ${r.drink?`<div class="rev-drink">🍹 ${esc(r.drink)}</div>`:''}
+      </div>
+    </div>`).join('');
+}
+
+// ─── SUMMARY ─────────────────────────────────────────────────────────────────
+function updateSum(){
+  const d=load(),n=name();
+  const rows=BARS.map(b=>{
+    const r=d[b.id]&&d[b.id][n];
+    return r&&r.stars?{name:b.name,stars:r.stars,drink:r.drink||''}:null;
+  }).filter(Boolean);
+  const g=document.getElementById('sumGrid');
+  if(!rows.length){g.innerHTML='<div class="no-r">Noch keine Bewertungen abgegeben.</div>';return;}
+  g.innerHTML=rows.map(r=>`
+    <div class="sum-row">
+      <span class="sum-name">${esc(r.name)}</span>
+      <span class="sum-right">
+        <span class="sum-stars">${'★'.repeat(r.stars)}</span>
+        ${r.drink?`<span class="sum-drink">${esc(r.drink)}</span>`:''}
+      </span>
+    </div>`).join('');
+}
+
+// ─── NAME ────────────────────────────────────────────────────────────────────
+function initName(){
+  const d=load();
+  if(d._name)document.getElementById('pname').value=d._name;
+  document.getElementById('pname').addEventListener('input',()=>{
+    const d2=load();d2._name=name();save(d2);
+    document.querySelectorAll('.bar-card').forEach(c=>{
+      const id=c.dataset.id,d3=load(),n=name();
+      const r=(d3[id]&&d3[id][n])||{stars:0,drink:''};
+      c.querySelectorAll('.star').forEach(s=>s.classList.toggle('on',+s.dataset.v<=r.stars));
+      const l=c.querySelector('.star-lbl');
+      l.textContent=r.stars?'★'.repeat(r.stars)+'☆'.repeat(5-r.stars)+` (${r.stars}/5)`:'Noch nicht bewertet';
+      c.querySelector('.drink-inp').value=r.drink||'';
+    });
+    updateSum();
+  });
+}
+
+renderBars();
+initMap();
+initName();
+updateSum();
+</script>
+</body>
+</html>
