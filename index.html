@@ -397,7 +397,7 @@ footer a{color:var(--gold);text-decoration:none}
 </footer>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script>
+<script type="module">
 // ─── BAR DATA ────────────────────────────────────────────────────────────────
 const BARS = [
   {
@@ -493,11 +493,46 @@ const BARS = [
   }
 ];
 
-const KEY = 'barhopping_ddorf_apr26';
-function load(){try{return JSON.parse(localStorage.getItem(KEY)||'{}')}catch{return{}}}
-function save(d){localStorage.setItem(KEY,JSON.stringify(d))}
 function name(){return document.getElementById('pname').value.trim()||'Anonym'}
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+
+// ─── FIREBASE ─────────────────────────────────────────────────────────────────
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getDatabase, ref, set, onValue, get } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
+
+const firebaseConfig = {
+  apiKey: "AIzaSyAn2b6dW0eo_kaE3XTu_Y2tK82yUq2PK60",
+  authDomain: "bar-hopping-73358.firebaseapp.com",
+  databaseURL: "https://bar-hopping-73358-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "bar-hopping-73358",
+  storageBucket: "bar-hopping-73358.firebasestorage.app",
+  messagingSenderId: "490199959100",
+  appId: "1:490199959100:web:bc1e2ba8295f510fc46539"
+};
+
+const fbApp = initializeApp(firebaseConfig);
+const db = getDatabase(fbApp);
+
+// Live DB snapshot (updated in real-time for all users)
+let DB = {};
+onValue(ref(db, 'ratings'), snap => {
+  DB = snap.val() || {};
+  // re-render all live UI
+  document.querySelectorAll('.bar-card').forEach(card => refreshCard(card));
+  updateVoteOverview();
+  updateSum();
+});
+
+function dbSet(path, value){
+  set(ref(db, path), value);
+}
+
+function getName(){ return name(); }
+
+// Local name persistence
+const NAME_KEY = 'bh_name';
+function loadName(){ return localStorage.getItem(NAME_KEY)||''; }
+function saveName(n){ localStorage.setItem(NAME_KEY, n); }
 
 // ─── MAP ─────────────────────────────────────────────────────────────────────
 function initMap(){
@@ -592,10 +627,39 @@ function renderBars(){
 }
 
 // ─── CARD LOGIC ───────────────────────────────────────────────────────────────
+function refreshCard(card){
+  const id=card.dataset.id;
+  const n=getName();
+  const r=(DB[id]&&DB[id][n])||{stars:0,drink:'',vote:null};
+  const allEntries=Object.values(DB[id]||{});
+
+  // stars
+  card.querySelectorAll('.star').forEach(s=>s.classList.toggle('on',+s.dataset.v<=r.stars));
+  const lbl=card.querySelector('.star-lbl');
+  lbl.textContent=r.stars?'★'.repeat(r.stars)+'☆'.repeat(5-r.stars)+` (${r.stars}/5)`:'Noch nicht bewertet';
+
+  // drink input (only update if not focused)
+  const inp=card.querySelector('.drink-inp');
+  if(document.activeElement!==inp) inp.value=r.drink||'';
+
+  // vote buttons
+  card.querySelector('.vote-btn.yes').classList.toggle('active',r.vote==='yes');
+  card.querySelector('.vote-btn.no').classList.toggle('active',r.vote==='no');
+
+  // tally
+  const yes=allEntries.filter(e=>e.vote==='yes').length;
+  const no=allEntries.filter(e=>e.vote==='no').length;
+  card.querySelector('.tally-yes').textContent=yes?`✅ ${yes} dabei`:'';
+  card.querySelector('.tally-no').textContent=no?`❌ ${no} lieber nicht`:'';
+
+  // open reviews
+  const revList=card.querySelector('.rev-list');
+  if(revList.classList.contains('open')) renderRevs(id,revList);
+}
+
 function initCard(card){
   const id=card.dataset.id;
   const stars=card.querySelectorAll('.star');
-  const lbl=card.querySelector('.star-lbl');
   const inp=card.querySelector('.drink-inp');
   const btn=card.querySelector('.save-btn');
   const ok=card.querySelector('.saved-ok');
@@ -603,78 +667,52 @@ function initCard(card){
   const revList=card.querySelector('.rev-list');
   const voteYes=card.querySelector('.vote-btn.yes');
   const voteNo=card.querySelector('.vote-btn.no');
-  const tallyYes=card.querySelector('.tally-yes');
-  const tallyNo=card.querySelector('.tally-no');
 
-  function mine(){const d=load();return(d[id]&&d[id][name()])||{stars:0,drink:'',vote:null}}
+  function myEntry(){ return (DB[id]&&DB[id][getName()])||{stars:0,drink:'',vote:null}; }
 
-  function refreshVote(){
-    const d=load(); const r=mine();
-    voteYes.classList.toggle('active',r.vote==='yes');
-    voteNo.classList.toggle('active',r.vote==='no');
-    const entries=Object.values(d[id]||{});
-    const yes=entries.filter(e=>e.vote==='yes').length;
-    const no=entries.filter(e=>e.vote==='no').length;
-    tallyYes.textContent=yes?`✅ ${yes} dabei`:'';
-    tallyNo.textContent=no?`❌ ${no} lieber nicht`:'';
+  function writeEntry(patch){
+    const n=getName();
+    const current=myEntry();
+    dbSet(`ratings/${id}/${n}`, {...current,...patch});
   }
 
-  function setVote(val){
-    const d=load(); const n=name();
-    if(!d[id])d[id]={};
-    if(!d[id][n])d[id][n]={stars:0,drink:'',vote:null};
-    d[id][n].vote=d[id][n].vote===val?null:val;
-    save(d); refreshVote(); updateVoteOverview();
-  }
+  // vote
+  voteYes.addEventListener('click',()=>{
+    const cur=myEntry();
+    writeEntry({vote: cur.vote==='yes'?null:'yes'});
+  });
+  voteNo.addEventListener('click',()=>{
+    const cur=myEntry();
+    writeEntry({vote: cur.vote==='no'?null:'no'});
+  });
 
-  voteYes.addEventListener('click',()=>setVote('yes'));
-  voteNo.addEventListener('click',()=>setVote('no'));
-  refreshVote();
-
-  function refresh(){
-    const r=mine();
-    stars.forEach(s=>s.classList.toggle('on',+s.dataset.v<=r.stars));
-    lbl.textContent=r.stars?'★'.repeat(r.stars)+'☆'.repeat(5-r.stars)+` (${r.stars}/5)`:'Noch nicht bewertet';
-    inp.value=r.drink||'';
-  }
-  refresh();
-
+  // stars
   stars.forEach(s=>{
     s.addEventListener('mouseenter',()=>stars.forEach(x=>x.classList.toggle('on',+x.dataset.v<=+s.dataset.v)));
-    s.addEventListener('mouseleave',refresh);
-    s.addEventListener('click',()=>{
-      const d=load(),n=name();
-      if(!d[id])d[id]={};
-      if(!d[id][n])d[id][n]={stars:0,drink:''};
-      d[id][n].stars=+s.dataset.v;
-      save(d);refresh();updateSum();
-      if(revList.classList.contains('open'))renderRevs(id,revList);
-    });
+    s.addEventListener('mouseleave',()=>refreshCard(card));
+    s.addEventListener('click',()=>writeEntry({stars:+s.dataset.v}));
   });
 
+  // drink save
   btn.addEventListener('click',()=>{
-    const d=load(),n=name();
-    if(!d[id])d[id]={};
-    if(!d[id][n])d[id][n]={stars:0,drink:''};
-    d[id][n].drink=inp.value.trim();
-    save(d);
+    writeEntry({drink:inp.value.trim()});
     ok.classList.add('show');setTimeout(()=>ok.classList.remove('show'),2000);
-    updateSum();
-    if(revList.classList.contains('open'))renderRevs(id,revList);
   });
 
+  // reviews toggle
   tog.addEventListener('click',()=>{
     const open=revList.classList.toggle('open');
     tog.textContent=open?'Bewertungen ausblenden ▴':'Alle Bewertungen ▾';
     if(open)renderRevs(id,revList);
   });
+
+  refreshCard(card);
 }
 
 function renderRevs(id,container){
-  const d=load();
-  const entries=Object.entries(d[id]||{});
+  const entries=Object.entries(DB[id]||{});
   if(!entries.length){
-    container.innerHTML='<div style="color:var(--muted);font-size:.8rem;text-align:center;padding:7px 0">Noch keine Bewertungen auf diesem Gerät.</div>';
+    container.innerHTML='<div style="color:var(--muted);font-size:.8rem;text-align:center;padding:7px 0">Noch keine Bewertungen.</div>';
     return;
   }
   container.innerHTML=entries.map(([n,r])=>`
@@ -690,9 +728,9 @@ function renderRevs(id,container){
 
 // ─── SUMMARY ─────────────────────────────────────────────────────────────────
 function updateSum(){
-  const d=load(),n=name();
+  const n=getName();
   const rows=BARS.map(b=>{
-    const r=d[b.id]&&d[b.id][n];
+    const r=DB[b.id]&&DB[b.id][n];
     return r&&r.stars?{name:b.name,stars:r.stars,drink:r.drink||''}:null;
   }).filter(Boolean);
   const g=document.getElementById('sumGrid');
@@ -709,24 +747,19 @@ function updateSum(){
 
 // ─── VOTE OVERVIEW ───────────────────────────────────────────────────────────
 function updateVoteOverview(){
-  const d=load();
   const g=document.getElementById('voteOverview');
-
-  // collect votes per bar
   const rows=BARS.map((b,i)=>{
-    const entries=Object.entries(d[b.id]||{});
+    const entries=Object.entries(DB[b.id]||{});
     const yes=entries.filter(([,e])=>e.vote==='yes');
     const no=entries.filter(([,e])=>e.vote==='no');
-    return{idx:i+1,name:b.name,id:b.id,yes,no,total:yes.length+no.length};
+    return{idx:i+1,name:b.name,yes,no,total:yes.length+no.length};
   }).filter(r=>r.total>0);
 
   if(!rows.length){
     g.innerHTML='<div class="no-votes">Noch keine Abstimmungen abgegeben.</div>';
     return;
   }
-
   const maxYes=Math.max(...rows.map(r=>r.yes.length),1);
-
   g.innerHTML=rows.map(r=>{
     const pct=Math.round((r.yes.length/maxYes)*100);
     const yesNames=r.yes.map(([n])=>esc(n)).join(', ');
@@ -745,23 +778,11 @@ function updateVoteOverview(){
 
 // ─── NAME ────────────────────────────────────────────────────────────────────
 function initName(){
-  const d=load();
-  if(d._name)document.getElementById('pname').value=d._name;
+  const saved=loadName();
+  if(saved) document.getElementById('pname').value=saved;
   document.getElementById('pname').addEventListener('input',()=>{
-    const d2=load();d2._name=name();save(d2);
-    document.querySelectorAll('.bar-card').forEach(c=>{
-      const id=c.dataset.id,d3=load(),n=name();
-      const r=(d3[id]&&d3[id][n])||{stars:0,drink:'',vote:null};
-      c.querySelectorAll('.star').forEach(s=>s.classList.toggle('on',+s.dataset.v<=r.stars));
-      const l=c.querySelector('.star-lbl');
-      l.textContent=r.stars?'★'.repeat(r.stars)+'☆'.repeat(5-r.stars)+` (${r.stars}/5)`:'Noch nicht bewertet';
-      c.querySelector('.drink-inp').value=r.drink||'';
-      // refresh vote buttons
-      const vY=c.querySelector('.vote-btn.yes');
-      const vN=c.querySelector('.vote-btn.no');
-      if(vY)vY.classList.toggle('active',r.vote==='yes');
-      if(vN)vN.classList.toggle('active',r.vote==='no');
-    });
+    saveName(getName());
+    document.querySelectorAll('.bar-card').forEach(c=>refreshCard(c));
     updateSum();
     updateVoteOverview();
   });
@@ -770,8 +791,6 @@ function initName(){
 renderBars();
 initMap();
 initName();
-updateSum();
-updateVoteOverview();
 </script>
 </body>
 </html>
